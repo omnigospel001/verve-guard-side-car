@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: verve-guard
+
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/verve_guard?allowPublicKeyRetrieval=true&useSSL=false&serverTimezone=UTC&useLegacyDatetimeCode=false
+    username: root
+    password: mysecretpassword
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    database: mysql
+
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+    consumer:
+      group-id: transfer-group
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.value.default.type: com.verve.guard.response.DeviceResponse
+        spring.json.trusted.packages: "*"
+        spring.json.use.type.headers: false
+        spring.json.type.mapping: deviceResponse:com.verve.guard.response.DeviceResponse
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        spring.json.type.mapping: deviceResponse:com.verve.guard.kafka.VerveNotificationRequest
+
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: gospel@gmail.com
+    password: google_pass
+    protocol: smtp
+    subject: Gospel's Verve Guard
+    properties:
+      mail:
+        debug: true
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  company:
+    name: Gospel's-Switch-Guard
+
+server:
+  port: 9090
+
+jwt:
+  secret: ${JWT_SECRET:404E635266556A586E3272357538782F413F4428472B4B6250645367566B5911}
+  expiration-ms: ${JWT_EXPIRATION_MS:900000} # 15 minutes
+  refresh-expiration-ms: ${JWT_REFRESH_EXP_MS:604800000} # 7 days
+
+app:
+  email-topic: emails
+
+logging:
+  level:
+    root: INFO
+    org.hibernate.SQL: DEBUG
+    org:
+      springframework:
+        security: DEBUG
+
+#retry:
+#  max-attempts: 4
+#  initial-interval-ms: 500
+#  multiplier: 2.0
