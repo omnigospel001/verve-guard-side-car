@@ -79,7 +79,7 @@ logging:
       springframework:
         security: DEBUG
 
-#retry:
-#  max-attempts: 4
-#  initial-interval-ms: 500
-#  multiplier: 2.0
+retry:
+  max-attempts: 4
+  initial-interval-ms: 500
+  multiplier: 2.0
