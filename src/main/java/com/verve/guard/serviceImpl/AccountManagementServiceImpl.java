@@ -25,7 +25,9 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.Nullable;
 import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -68,18 +70,12 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
     @Override
     @Transactional
-    public TransactionResponse deposit(DepositRequest depositRequest, String idempotencyKey, Long id) {
+    public TransactionResponse deposit(DepositRequest depositRequest, String idempotencyKey, Authentication currentUser) {
+
+        User user = (User) currentUser.getPrincipal();
 
         String responseKey = "idem:transfer:" + idempotencyKey;
         String lockKey = responseKey + ":lock";
-
-        TransactionResponse cached =
-                (TransactionResponse) redisTemplate.opsForValue().get(responseKey);
-
-        if (cached != null) {
-            log.info("Returning cached response for key={}", idempotencyKey);
-            return cached;
-        }
 
         Boolean lockAcquired = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, "LOCK", Duration.ofSeconds(30));
@@ -91,9 +87,9 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
         //
 //        try {
-            User user = userRepository.findById(id).orElseThrow(() -> new UserNotFoundException("Employee not found"));
+            User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
 
-            var managementForSender  = managementRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not really found"));
+            var managementForSender  = managementRepository.findById(userFound.getId()).orElseThrow(() -> new UserNotFoundException("User not really found"));
 
             //
             var management = new AccountManagement();
@@ -101,8 +97,8 @@ public class AccountManagementServiceImpl implements AccountManagementService {
             management.setCurrency(depositRequest.getCurrency());
             management.setTransactionType(TransactionType.DEPOSIT);
             management.setCardNumber(managementForSender.getCardNumber());
-            management.setMerchantId(user.getMerchantId());
-            management.setUser(user);
+            management.setMerchantId(userFound.getMerchantId());
+            management.setUser(userFound);
             managementRepository.save(management);
 
 
@@ -122,30 +118,17 @@ public class AccountManagementServiceImpl implements AccountManagementService {
                     .transactionType(TransactionType.DEPOSIT)
                     .build();
 
-//            redisTemplate.opsForValue()
-//                    .set(responseKey, transactionResponse, Duration.ofMinutes(0));
-//
             return transactionResponse;
-//        } finally
-//    {
-//        redisTemplate.delete(lockKey);
-//    }
 }
 
     @Override
     @Transactional
-    public TransactionResponse withdraw(WithdrawalRequest withdrawalRequest, String idempotencyKey, Long id) {
+    public TransactionResponse withdraw(WithdrawalRequest withdrawalRequest, String idempotencyKey, Authentication currentUser) {
+
+        User user = (User) currentUser.getPrincipal();
 
         String responseKey = "idem:transfer:" + idempotencyKey;
         String lockKey = responseKey + ":lock";
-
-        TransactionResponse cached =
-                (TransactionResponse) redisTemplate.opsForValue().get(responseKey);
-
-        if (cached != null) {
-            log.info("Returning cached response for key={}", idempotencyKey);
-            return cached;
-        }
 
         Boolean lockAcquired = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, "LOCK", Duration.ofSeconds(30));
@@ -155,20 +138,31 @@ public class AccountManagementServiceImpl implements AccountManagementService {
                     "Duplicate request in progress. Please wait...");
         }
 
-        User user = userRepository.findById(id).orElseThrow(() -> new UserNotFoundException("Employee not found"));
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
 
-        var management = new AccountManagement();
-        //I am handling withdrawal here
-        management.setBalance(management.getBalance().subtract(withdrawalRequest.getBalance()));
-        management.setCurrency(withdrawalRequest.getCurrency());
-        management.setTransactionType(TransactionType.WITHDRAWAL);
-        management.setUser(user);
-        managementRepository.save(management);
+        Query queryCount = entityManager.createNativeQuery("SELECT COUNT(user_id) FROM account_management WHERE user_id =:user_id");
+
+        queryCount.setParameter("user_id", userFound.getId());
+
+        long UserIdCount = (Long) queryCount.getSingleResult();
+
+        // Remember BODMAS RULE (Bracket-> Order-> Division-> Multiplication-> Addition-> Subtraction)
+        // Procedure, we have Open-Bracket-Multiplication then Summation -> Division -> Multiplied by the User-DB-Count, then Subtraction from main account balance
+        Query query  =  entityManager.createNativeQuery("UPDATE account_management SET balance = balance - "+ withdrawalRequest.getBalance() +" / " + UserIdCount + " WHERE user_id =:user_id " );
+
+        query.setParameter("user_id", userFound.getId());
+
+        query.executeUpdate();
+
+
+        //I'm accounting for balance sufficiency
+        insufficientBalanceForWithdrawal(user, withdrawalRequest);
+
 
 
         TransactionHistory transaction = TransactionHistory.builder()
                 .amount(withdrawalRequest.getBalance())
-                .currency(management.getCurrency())
+                .currency(withdrawalRequest.getCurrency())
                 .transactionType(TransactionType.WITHDRAWAL)
                 .status(TransactionStatus.PAYMENT_SUCCESSFUL)
                 .build();
@@ -185,21 +179,12 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
     @Override
     @Transactional
-    public TransactionResponse transfer(TransferRequest transferRequest, String currency, String idempotencyKey, Long id, HttpServletRequest httpRequest) {
+    public TransactionResponse transfer(TransferRequest transferRequest, String currency, String idempotencyKey, Authentication currentUser, HttpServletRequest httpRequest) {
 
-        //
-
+        User user = (User) currentUser.getPrincipal();
 
         String responseKey = "idem:transfer:" + idempotencyKey;
         String lockKey = responseKey + ":lock";
-
-        TransactionResponse cached =
-                (TransactionResponse) redisTemplate.opsForValue().get(responseKey);
-
-        if (cached != null) {
-            log.info("Returning cached response for key={}", idempotencyKey);
-            return cached;
-        }
 
         Boolean lockAcquired = redisTemplate.opsForValue()
                 .setIfAbsent(lockKey, "LOCK", Duration.ofSeconds(30));
@@ -210,49 +195,34 @@ public class AccountManagementServiceImpl implements AccountManagementService {
         }
 
 
-        User user = userRepository.findByAccountNumber(transferRequest.getAccountNumber()).orElseThrow(() -> new UserNotFoundException("Invalid account number"));
+        User userDetails = userRepository.findByAccountNumber(transferRequest.getAccountNumber()).orElseThrow(() -> new UserNotFoundException("Invalid account number"));
 
-        User superUser = userRepository.findById(id).orElseThrow(() -> new AccountNumberNotFoundException("Account number not found"));
+        User superUser = userRepository.findById(user.getId()).orElseThrow(() -> new AccountNumberNotFoundException("Account number not found"));
 
         //SECURITY
-        verveGuard(user, superUser, transferRequest, httpRequest);
+        verveGuard(userDetails, superUser, transferRequest, httpRequest);
 
-        //
-        if (user.getAccountNumber().equals(superUser.getAccountNumber())) {
-            log.info("Merchant or User is trying to transfer money to himself");
-            throw new CannotSendMoneyToYourselfException("You cannot transfer money to yourself, but you can make a deposit");
-        }
+        User userFound = YouCannotSendMoneyToYourself(superUser, transferRequest);
         log.info("Passed user conflict checks");
 
-        //Checking if the user balance is sufficient for the transaction
-        Query query = entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id");
-        query.setParameter("user_id", id);
-
-        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
-
-        if (totalAmount.doubleValue() <= transferRequest.getAmount().doubleValue()){
-
-            throw new InsufficientBalanceException("Insufficient balance");
-        }
-
-
-        //
-//        if (transferRequest.getAmount().doubleValue() <= MINIMUM_DEPOSIT.doubleValue())
-//        {
-//            throw new LowerAmountException("Amount must be greater than 100");
-//        }
-        log.info("Passed Amount checks");
-
-
         //debit is done here
-        var managementForSender  = managementRepository.findById(id).orElseThrow(() -> new UserNotFoundException("User not found"));
-        managementForSender.setBalance(managementForSender.getBalance().subtract(transferRequest.getAmount()));
-        managementRepository.save(managementForSender);
-        log.info("Passed Debiting");
+        //Debiting is done here
+        Query queryCount = entityManager.createNativeQuery("SELECT COUNT(user_id) FROM account_management WHERE user_id =:user_id");
+
+        queryCount.setParameter("user_id", userFound.getId());
+
+        long UserIdCount = (Long) queryCount.getSingleResult();
+
+        // Remember BODMAS RULE (Bracket-> Order-> Division-> Multiplication-> Addition-> Subtraction)
+        // Procedure, we have Open-Bracket-Multiplication then Summation -> Division -> Multiplied by the User-DB-Count, then Subtraction from main account balance
+        Query query  =  entityManager.createNativeQuery("UPDATE account_management SET amount = amount - "+ transferRequest.getAmount() +" / " + UserIdCount + " WHERE user_id =:user_id " );
+        query.setParameter("user_id", user.getId());
+
+        query.executeUpdate();
+
 
         //I'm handling crediting here
         var managementForReceiver  = userRepository.findByAccountNumber(transferRequest.getAccountNumber()).orElseThrow(() -> new UserNotFoundException("No user with this account number is found"));
-
         //
         var management = managementRepository.save(managementMapper.saveTransaction(managementForReceiver, transferRequest));
 
@@ -267,6 +237,9 @@ public class AccountManagementServiceImpl implements AccountManagementService {
                 .build();
 
         historyRepository.save(transaction);
+
+        //
+        insufficientBalanceForTransfer(user, transferRequest);
 
         return TransactionResponse.builder()
                 .amount(transferRequest.getAmount())
@@ -434,5 +407,55 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
     }
 
+
+    public User insufficientBalanceForWithdrawal(User user, WithdrawalRequest withdrawalRequest) {
+
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        Query query  =  entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id" );
+
+        query.setParameter("user_id", userFound.getId());
+
+        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
+
+        //BigDecimal LIMIT_DEPOSIT_AMOUNT = new BigDecimal("100.00");
+        if (totalAmount.doubleValue() <= withdrawalRequest.getBalance().doubleValue()){
+            throw new InsufficientBalanceException("Insufficient balance");
+        }
+
+        return userFound;
+    }
+
+
+    public User insufficientBalanceForTransfer(User user, TransferRequest transferRequest) {
+
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        Query query  =  entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id" );
+
+        query.setParameter("user_id", userFound.getId());
+
+        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
+
+        //BigDecimal LIMIT_DEPOSIT_AMOUNT = new BigDecimal("100.00");
+        if (totalAmount.doubleValue() <= transferRequest.getAmount().doubleValue()){
+            throw new InsufficientBalanceException("Insufficient balance");
+        }
+
+        return userFound;
+    }
+
+    //
+    public User YouCannotSendMoneyToYourself(User user, TransferRequest transferRequest) {
+
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        if (transferRequest.getAccountNumber().equals(userFound.getAccountNumber()))
+        {
+            throw new YouCannotSendMoneyToYourselfException("You Cannot Send Money To Yourself");
+        }
+        return userFound;
+
+    }
 
 }

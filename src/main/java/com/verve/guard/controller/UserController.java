@@ -7,6 +7,7 @@ import com.verve.guard.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -21,17 +22,17 @@ public class UserController {
         this.userService = userService;
     }
 
-    @PutMapping("/update/{id}")
+    @PutMapping("/update")
     public ResponseEntity<UserResponse> updateUser(@Valid @RequestBody UpdateUserRequest updateUserRequest,
-                                                   @PathVariable Long id) {
+                                                    Authentication currentUser) {
 
-        return ResponseEntity.ok().body(userService.updateUser(id, updateUserRequest));
+        return ResponseEntity.ok().body(userService.updateUser(currentUser, updateUserRequest));
     }
 
-    @GetMapping("/find/{id}")
-    public ResponseEntity<UserResponse> findById(@PathVariable Long id) {
+    @GetMapping("/find")
+    public ResponseEntity<UserResponse> findById(Authentication currentUser) {
 
-        return ResponseEntity.ok().body(userService.findById(id));
+        return ResponseEntity.ok().body(userService.findById(currentUser));
     }
 
 
@@ -46,9 +47,10 @@ public class UserController {
     }
 
 
-    @DeleteMapping("/delete/{id}")
-    public ResponseEntity<?> delete(@PathVariable Long id) {
-        userService.delete(id);
+    @DeleteMapping("/delete")
+    public ResponseEntity<?> delete(Authentication currentUser) {
+        userService.delete(currentUser);
         return ResponseEntity.ok().build();
     }
+
 }

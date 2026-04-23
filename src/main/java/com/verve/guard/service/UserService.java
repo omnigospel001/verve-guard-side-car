@@ -5,21 +5,20 @@ import com.verve.guard.request.UpdateUserRequest;
 import com.verve.guard.request.UserRequest;
 import com.verve.guard.response.UserResponse;
 import org.springframework.data.domain.Page;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
 public interface UserService {
 
- UserResponse getCurrentUser();
-
  List<User> registerMany(List<UserRequest> userRequest);
 
- UserResponse updateUser(Long id, UpdateUserRequest updateUserRequest);
+ UserResponse updateUser(Authentication currentUser, UpdateUserRequest updateUserRequest);
 
- UserResponse findById(Long id);
+ UserResponse findById(Authentication currentUser);
 
  Page<UserResponse> findAll(Integer page, Integer size);
 
- void delete(Long id);
+ void delete(Authentication currentUser);
 
 }

@@ -8,6 +8,7 @@ import com.verve.guard.service.AccountManagementService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 
@@ -21,30 +22,30 @@ public class AccountManagementController {
         this.accountManagementService = accountManagementService;
     }
 
-    @PostMapping("/transfer/{id}")
+    @PostMapping("/transfer")
     public ResponseEntity<TransactionResponse> transfer(@RequestHeader("Idempotency-Key") String idempotencyKey,
                                                         @Valid @RequestBody TransferRequest transferRequest,
-                                                        @PathVariable Long id,
+                                                        Authentication currentUser,
                                                         HttpServletRequest httpRequest) {
 
         String currency = "NGN";
-        return ResponseEntity.ok().body(accountManagementService.transfer(transferRequest, currency, idempotencyKey, id, httpRequest));
+        return ResponseEntity.ok().body(accountManagementService.transfer(transferRequest, currency, idempotencyKey, currentUser, httpRequest));
     }
 
-    @PostMapping("/deposit/{id}")
+    @PostMapping("/deposit")
     public ResponseEntity<TransactionResponse> deposit(@RequestHeader("Idempotency-Key") String idempotencyKey,
                                                         @Valid @RequestBody DepositRequest depositRequest,
-                                                        @PathVariable Long id) {
+                                                        Authentication currentUser) {
 
-        return ResponseEntity.ok().body(accountManagementService.deposit(depositRequest, idempotencyKey, id));
+        return ResponseEntity.ok().body(accountManagementService.deposit(depositRequest, idempotencyKey, currentUser));
     }
 
-    @PutMapping("/withdraw/{id}")
+    @PutMapping("/withdraw")
     public ResponseEntity<TransactionResponse> withdrawal(@RequestHeader("Idempotency-Key") String idempotencyKey,
-                                                       @Valid @RequestBody WithdrawalRequest withdrawalRequest,
-                                                       @PathVariable Long id) {
+                                                          @Valid @RequestBody WithdrawalRequest withdrawalRequest,
+                                                          Authentication currentUser) {
 
-        return ResponseEntity.ok().body(accountManagementService.withdraw(withdrawalRequest, idempotencyKey, id));
+        return ResponseEntity.ok().body(accountManagementService.withdraw(withdrawalRequest, idempotencyKey, currentUser));
     }
 
 }

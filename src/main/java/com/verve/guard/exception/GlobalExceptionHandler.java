@@ -120,4 +120,11 @@ public class GlobalExceptionHandler {
         );
     }
 
+    @ExceptionHandler(YouCannotSendMoneyToYourselfException.class)
+    public ResponseEntity<?> youCannotSendMoneyToYourselfException(YouCannotSendMoneyToYourselfException moneyToYourselfException) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
+                moneyToYourselfException.getMessage()
+        );
+    }
+
 }
