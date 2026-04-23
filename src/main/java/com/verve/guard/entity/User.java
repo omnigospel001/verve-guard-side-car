@@ -3,10 +3,7 @@ package com.verve.guard.entity;
 
 import com.verve.guard.commons.CommonEntity;
 import jakarta.persistence.*;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -32,11 +29,19 @@ public class User extends CommonEntity implements UserDetails {
     @NotBlank(message = "First name is required")
     @NotNull(message = "First name is required")
     @Size(min = 3, max = 30, message = "First Name must be between 3 to 30 letters")
+    @Pattern(
+            regexp = "^[a-zA-Z]+(-[a-zA-Z]+)*$",
+            message = "Last name must contain only letters and optional hyphens (e.g., Jean-Paul)"
+    )
     private String firstName;
 
     @NotBlank(message = "Last name is required")
     @NotNull(message = "Last name is required")
     @Size(min = 3, max = 30, message = "Last Name must be between 3 to 30 letters")
+    @Pattern(
+            regexp = "^[a-zA-Z]+(-[a-zA-Z]+)*$",
+            message = "Last name must contain only letters and optional hyphens (e.g., Jean-Paul)"
+    )
     private String lastName;
 
     @NotNull(message = "Account Number is required")
@@ -71,12 +76,27 @@ public class User extends CommonEntity implements UserDetails {
     }
 
     @Override
-    public @Nullable String getPassword() {
-        return this.password;
+    public String getPassword() {
+        return password;
     }
 
     @Override
-    public @NonNull String getUsername() {
-        return this.getEmail();
+    public String getUsername() {
+        return email;
     }
+
+    @Override
+    public boolean isAccountNonExpired() { return true; }
+
+    @Override
+    public boolean isAccountNonLocked() { return true; }
+
+    @Override
+    public boolean isCredentialsNonExpired() { return true; }
+
+    @Override
+    public boolean isEnabled() { return true; }
+
 }
+
+

@@ -39,7 +39,7 @@ services:
   redis-insight:
     image: redis/redisinsight:latest
     container_name: verve-redis-insight
-    restart: always
+    restart: unless-stopped
     ports:
       - "5540:5540"      # Open http://localhost:5540 in browser
     depends_on:
