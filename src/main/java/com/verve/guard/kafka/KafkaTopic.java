@@ -10,11 +10,35 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 public class KafkaTopic {
 
     @Bean
-    public NewTopic scheduleTopic() {
+    public NewTopic VerveGuardTopic() {
         return TopicBuilder
-                .name("transfer-topic")
+                .name("verve-guard-topic")
                 .build();
     }
+
+    @Bean
+    public NewTopic TransferTopic() {
+        return TopicBuilder
+                .name("transfer-topic")
+                .partitions(3)
+                .replicas(1)
+                .build();
+    }
+
+    @Bean
+    public NewTopic withdrawalTopic() {
+        return TopicBuilder
+                .name("withdrawal-topic")
+                .build();
+    }
+
+    @Bean
+    public NewTopic depositTopic() {
+        return TopicBuilder
+                .name("deposit-topic")
+                .build();
+    }
+
 
     @Bean
     public ThreadPoolTaskScheduler taskScheduler() {
