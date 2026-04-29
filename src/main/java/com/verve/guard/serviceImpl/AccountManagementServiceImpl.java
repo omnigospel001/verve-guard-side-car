@@ -8,15 +8,16 @@ import com.verve.guard.enums.TransactionStatus;
 import com.verve.guard.enums.TransactionType;
 import com.verve.guard.exception.*;
 import com.verve.guard.kafka.NotificationProducer;
-import com.verve.guard.kafka.VerveNotificationRequest;
 import com.verve.guard.mapper.AccountManagementMapper;
+import com.verve.guard.notificationDTO.DepositNotification;
+import com.verve.guard.notificationDTO.TransferNotification;
+import com.verve.guard.notificationDTO.VerveNotification;
+import com.verve.guard.notificationDTO.WithdrawalNotification;
 import com.verve.guard.repository.AccountManagementRepository;
 import com.verve.guard.repository.DeviceLogRepository;
 import com.verve.guard.repository.TransactionHistoryRepository;
 import com.verve.guard.repository.UserRepository;
-import com.verve.guard.request.DepositRequest;
-import com.verve.guard.request.TransferRequest;
-import com.verve.guard.request.WithdrawalRequest;
+import com.verve.guard.request.*;
 import com.verve.guard.response.DeviceResponse;
 import com.verve.guard.response.TransactionResponse;
 import com.verve.guard.service.AccountManagementService;
@@ -87,7 +88,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
         //
 //        try {
-            User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
+                User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
 
             var managementForSender  = managementRepository.findById(userFound.getId()).orElseThrow(() -> new UserNotFoundException("User not really found"));
 
@@ -111,14 +112,15 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
             historyRepository.save(transaction);
 
-            var transactionResponse = TransactionResponse.builder()
-                    .amount(depositRequest.getBalance())
-                    .currency(depositRequest.getCurrency())
-                    .status(TransactionStatus.PAYMENT_SUCCESSFUL)
-                    .transactionType(TransactionType.DEPOSIT)
-                    .build();
+            //SENDING DEPOSIT EMAIL ALERT
+            sendDepositEmailAlert(userFound, depositRequest);
 
-            return transactionResponse;
+        return TransactionResponse.builder()
+                .amount(depositRequest.getBalance())
+                .currency(depositRequest.getCurrency())
+                .status(TransactionStatus.PAYMENT_SUCCESSFUL)
+                .transactionType(TransactionType.DEPOSIT)
+                .build();
 }
 
     @Override
@@ -159,7 +161,6 @@ public class AccountManagementServiceImpl implements AccountManagementService {
         insufficientBalanceForWithdrawal(user, withdrawalRequest);
 
 
-
         TransactionHistory transaction = TransactionHistory.builder()
                 .amount(withdrawalRequest.getBalance())
                 .currency(withdrawalRequest.getCurrency())
@@ -168,6 +169,9 @@ public class AccountManagementServiceImpl implements AccountManagementService {
                 .build();
 
         historyRepository.save(transaction);
+
+        //SENDING WITHDRAWAL EMAIL ALERT
+        sendWithdrawalEmailAlert(userFound, withdrawalRequest);
 
         return TransactionResponse.builder()
                 .amount(withdrawalRequest.getBalance())
@@ -215,7 +219,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
         // Remember BODMAS RULE (Bracket-> Order-> Division-> Multiplication-> Addition-> Subtraction)
         // Procedure, we have Open-Bracket-Multiplication then Summation -> Division -> Multiplied by the User-DB-Count, then Subtraction from main account balance
-        Query query  =  entityManager.createNativeQuery("UPDATE account_management SET amount = amount - "+ transferRequest.getAmount() +" / " + UserIdCount + " WHERE user_id =:user_id " );
+        Query query  =  entityManager.createNativeQuery("UPDATE account_management SET balance = balance - "+ transferRequest.getAmount() +" / " + UserIdCount + " WHERE user_id =:user_id " );
         query.setParameter("user_id", user.getId());
 
         query.executeUpdate();
@@ -227,6 +231,9 @@ public class AccountManagementServiceImpl implements AccountManagementService {
         var management = managementRepository.save(managementMapper.saveTransaction(managementForReceiver, transferRequest));
 
         log.info("Both sender and receiver transactions have been committed");
+
+        //SENDING EMAIL ALERTS FOR SENDER AND RECEIVER
+        sendTransferEmailAlert(userDetails, superUser, transferRequest);
 
         //
         TransactionHistory transaction = TransactionHistory.builder()
@@ -327,7 +334,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
     }
 
     //
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    //@Transactional(propagation = Propagation.REQUIRES_NEW)
     public void detectMultipleRequests(User user, User superUser, HttpServletRequest request) {
 
         String key = "fraud:transfer:user:" + user.getId();
@@ -359,7 +366,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
 
     //
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    //@Transactional(propagation = Propagation.REQUIRES_NEW)
     public void detectMultipleRequestsByIp(User user, User superUser, HttpServletRequest request) {
 
         //I'm getting the user ipAddress
@@ -388,7 +395,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
     public void sendFraudEmailAlert(String ipAddress, UserAgent userAgent, User user, User superUser) {
 
         this.notificationProducer.sendNotification(
-                new VerveNotificationRequest(
+                new VerveNotification(
                         user.getFirstName(),
                         user.getLastName(),
                         user.getPhone(),
@@ -406,6 +413,58 @@ public class AccountManagementServiceImpl implements AccountManagementService {
         );
 
     }
+
+
+    //
+    public void sendTransferEmailAlert(User userDetails, User superUser, TransferRequest transferRequest) {
+
+        this.notificationProducer.sendTransferNotification(
+                new TransferNotification(
+                        superUser.getFirstName(),
+                        superUser.getLastName(),
+                        superUser.getEmail(),
+                        superUser.getAccountNumber(),
+                        userDetails.getFirstName(),
+                        userDetails.getLastName(),
+                        userDetails.getEmail(),
+                        userDetails.getAccountNumber(),
+                        transferRequest.getAmount()
+                )
+        );
+
+    }
+
+    //
+    public void sendDepositEmailAlert(User superUser, DepositRequest depositRequest) {
+
+        this.notificationProducer.sendDepositNotification(
+                new DepositNotification(
+                        superUser.getFirstName(),
+                        superUser.getLastName(),
+                        superUser.getEmail(),
+                        superUser.getAccountNumber(),
+                        depositRequest.getBalance()
+                )
+        );
+
+    }
+
+
+    //
+    public void sendWithdrawalEmailAlert(User superUser, WithdrawalRequest withdrawalRequest) {
+
+        this.notificationProducer.sendWithdrawalNotification(
+                new WithdrawalNotification(
+                        superUser.getFirstName(),
+                        superUser.getLastName(),
+                        superUser.getEmail(),
+                        superUser.getAccountNumber(),
+                        withdrawalRequest.getBalance()
+                )
+        );
+
+    }
+
 
 
     public User insufficientBalanceForWithdrawal(User user, WithdrawalRequest withdrawalRequest) {

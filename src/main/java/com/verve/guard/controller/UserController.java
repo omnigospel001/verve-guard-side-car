@@ -1,6 +1,5 @@
 package com.verve.guard.controller;
 
-
 import com.verve.guard.request.UpdateUserRequest;
 import com.verve.guard.response.UserResponse;
 import com.verve.guard.service.UserService;
@@ -10,7 +9,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/v1")
