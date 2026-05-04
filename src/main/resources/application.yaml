@@ -37,8 +37,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: gosm@gmail.com
-    password: pass
+    username: gos@gmail.com
+    password:
     protocol: smtp
     subject: Gospel's Verve Guard
     properties:
@@ -85,9 +85,27 @@ logging:
     org:
       springframework:
         security: DEBUG
+  pattern:
+    level: "%5p [traceId=%X{traceId}, spanId=%X{spanId}]"
 
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
 
+  endpoint:
+    prometheus:
+      enabled: true
+
+  tracing:
+    sampling:
+      probability: 1.0
+
+  otlp:
+    tracing:
+      endpoint: http://localhost:4318/v1/traces
 
 
 

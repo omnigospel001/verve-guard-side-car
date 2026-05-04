@@ -47,6 +47,14 @@ services:
     networks:
       - verve-net
 
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - verve-net
+
   zookeeper:
     image: confluentinc/cp-zookeeper:latest
     container_name: zookeeper

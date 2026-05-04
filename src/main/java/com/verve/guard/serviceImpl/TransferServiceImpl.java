@@ -1,6 +1,5 @@
 package com.verve.guard.serviceImpl;
 
-import com.verve.guard.entity.AccountManagement;
 import com.verve.guard.entity.DeviceLog;
 import com.verve.guard.entity.TransactionHistory;
 import com.verve.guard.entity.User;
@@ -9,28 +8,25 @@ import com.verve.guard.enums.TransactionType;
 import com.verve.guard.exception.*;
 import com.verve.guard.kafka.NotificationProducer;
 import com.verve.guard.mapper.AccountManagementMapper;
-import com.verve.guard.notificationDTO.DepositNotification;
 import com.verve.guard.notificationDTO.TransferNotification;
 import com.verve.guard.notificationDTO.VerveNotification;
-import com.verve.guard.notificationDTO.WithdrawalNotification;
 import com.verve.guard.repository.AccountManagementRepository;
 import com.verve.guard.repository.DeviceLogRepository;
 import com.verve.guard.repository.TransactionHistoryRepository;
 import com.verve.guard.repository.UserRepository;
-import com.verve.guard.request.*;
+import com.verve.guard.request.TransferRequest;
 import com.verve.guard.response.DeviceResponse;
 import com.verve.guard.response.TransactionResponse;
-import com.verve.guard.service.AccountManagementService;
+import com.verve.guard.service.TransferService;
 import eu.bitwalker.useragentutils.UserAgent;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
-import org.jspecify.annotations.Nullable;
+import org.jspecify.annotations.NonNull;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -39,147 +35,35 @@ import java.time.LocalDateTime;
 
 @Slf4j
 @Service
-public class AccountManagementServiceImpl implements AccountManagementService {
+public class TransferServiceImpl implements TransferService {
 
     private final RedisTemplate<String, Object> redisTemplate;
-    private final AccountManagementRepository managementRepository;
     private final UserRepository userRepository;
     private final TransactionHistoryRepository historyRepository;
     private final DeviceLogRepository deviceLogRepository;
     private final NotificationProducer notificationProducer;
-    private final AccountManagementMapper managementMapper;
     private final EntityManager entityManager;
+    private final AccountManagementRepository managementRepository;
+    private final AccountManagementMapper managementMapper;
 
 
     //
-    private static final BigDecimal MINIMUM_DEPOSIT = new BigDecimal("100");
     private static final BigDecimal MAXIMUM_AMOUNT_THRESHOLD = new BigDecimal("5000000"); //5 MILLION NAIRA
-    private static final int MAX_REQUESTS = 5;
+    private static final int MAX_REQUESTS = 4;
     private static final int TIME_WINDOW_SECONDS = 10;
 
 
-    public AccountManagementServiceImpl(RedisTemplate<String, Object> redisTemplate, AccountManagementRepository managementRepository, UserRepository userRepository, TransactionHistoryRepository historyRepository, DeviceLogRepository deviceLogRepository, NotificationProducer notificationProducer, AccountManagementMapper managementMapper, EntityManager entityManager) {
+    public TransferServiceImpl(RedisTemplate<String, Object> redisTemplate, UserRepository userRepository, TransactionHistoryRepository historyRepository, DeviceLogRepository deviceLogRepository, NotificationProducer notificationProducer, EntityManager entityManager, AccountManagementRepository managementRepository, AccountManagementMapper managementMapper) {
         this.redisTemplate = redisTemplate;
-        this.managementRepository = managementRepository;
         this.userRepository = userRepository;
         this.historyRepository = historyRepository;
         this.deviceLogRepository = deviceLogRepository;
         this.notificationProducer = notificationProducer;
-        this.managementMapper = managementMapper;
         this.entityManager = entityManager;
+        this.managementRepository = managementRepository;
+        this.managementMapper = managementMapper;
     }
 
-    @Override
-    @Transactional
-    public TransactionResponse deposit(DepositRequest depositRequest, String idempotencyKey, Authentication currentUser) {
-
-        User user = (User) currentUser.getPrincipal();
-
-        String responseKey = "idem:transfer:" + idempotencyKey;
-        String lockKey = responseKey + ":lock";
-
-        Boolean lockAcquired = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "LOCK", Duration.ofSeconds(30));
-
-        if (Boolean.FALSE.equals(lockAcquired)) {
-            throw new DuplicateTransferRequestException(
-                    "Duplicate request in progress. Please wait...");
-        }
-
-        //
-//        try {
-                User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
-
-            var managementForSender  = managementRepository.findById(userFound.getId()).orElseThrow(() -> new UserNotFoundException("User not really found"));
-
-            //
-            var management = new AccountManagement();
-            management.setBalance(depositRequest.getBalance());
-            management.setCurrency(depositRequest.getCurrency());
-            management.setTransactionType(TransactionType.DEPOSIT);
-            management.setCardNumber(managementForSender.getCardNumber());
-            management.setMerchantId(userFound.getMerchantId());
-            management.setUser(userFound);
-            managementRepository.save(management);
-
-
-            TransactionHistory transaction = TransactionHistory.builder()
-                    .amount(depositRequest.getBalance())
-                    .currency(management.getCurrency())
-                    .transactionType(TransactionType.DEPOSIT)
-                    .status(TransactionStatus.PAYMENT_SUCCESSFUL)
-                    .build();
-
-            historyRepository.save(transaction);
-
-            //SENDING DEPOSIT EMAIL ALERT
-            sendDepositEmailAlert(userFound, depositRequest);
-
-        return TransactionResponse.builder()
-                .amount(depositRequest.getBalance())
-                .currency(depositRequest.getCurrency())
-                .status(TransactionStatus.PAYMENT_SUCCESSFUL)
-                .transactionType(TransactionType.DEPOSIT)
-                .build();
-}
-
-    @Override
-    @Transactional
-    public TransactionResponse withdraw(WithdrawalRequest withdrawalRequest, String idempotencyKey, Authentication currentUser) {
-
-        User user = (User) currentUser.getPrincipal();
-
-        String responseKey = "idem:transfer:" + idempotencyKey;
-        String lockKey = responseKey + ":lock";
-
-        Boolean lockAcquired = redisTemplate.opsForValue()
-                .setIfAbsent(lockKey, "LOCK", Duration.ofSeconds(30));
-
-        if (Boolean.FALSE.equals(lockAcquired)) {
-            throw new DuplicateTransferRequestException(
-                    "Duplicate request in progress. Please wait...");
-        }
-
-        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("Employee not found"));
-
-        Query queryCount = entityManager.createNativeQuery("SELECT COUNT(user_id) FROM account_management WHERE user_id =:user_id");
-
-        queryCount.setParameter("user_id", userFound.getId());
-
-        long UserIdCount = (Long) queryCount.getSingleResult();
-
-        // Remember BODMAS RULE (Bracket-> Order-> Division-> Multiplication-> Addition-> Subtraction)
-        // Procedure, we have Open-Bracket-Multiplication then Summation -> Division -> Multiplied by the User-DB-Count, then Subtraction from main account balance
-        Query query  =  entityManager.createNativeQuery("UPDATE account_management SET balance = balance - "+ withdrawalRequest.getBalance() +" / " + UserIdCount + " WHERE user_id =:user_id " );
-
-        query.setParameter("user_id", userFound.getId());
-
-        query.executeUpdate();
-
-
-        //I'm accounting for balance sufficiency
-        insufficientBalanceForWithdrawal(user, withdrawalRequest);
-
-
-        TransactionHistory transaction = TransactionHistory.builder()
-                .amount(withdrawalRequest.getBalance())
-                .currency(withdrawalRequest.getCurrency())
-                .transactionType(TransactionType.WITHDRAWAL)
-                .status(TransactionStatus.PAYMENT_SUCCESSFUL)
-                .build();
-
-        historyRepository.save(transaction);
-
-        //SENDING WITHDRAWAL EMAIL ALERT
-        sendWithdrawalEmailAlert(userFound, withdrawalRequest);
-
-        return TransactionResponse.builder()
-                .amount(withdrawalRequest.getBalance())
-                .currency(withdrawalRequest.getCurrency())
-                .status(TransactionStatus.PAYMENT_SUCCESSFUL)
-                .transactionType(TransactionType.WITHDRAWAL)
-                .build();
-    }
 
     @Override
     @Transactional
@@ -257,13 +141,46 @@ public class AccountManagementServiceImpl implements AccountManagementService {
     }
 
 
+    public User insufficientBalanceForTransfer(User user, TransferRequest transferRequest) {
+
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        Query query  =  entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id" );
+
+        query.setParameter("user_id", userFound.getId());
+
+        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
+
+        //BigDecimal LIMIT_DEPOSIT_AMOUNT = new BigDecimal("100.00");
+        if (totalAmount.doubleValue() <= transferRequest.getAmount().doubleValue()){
+            throw new InsufficientBalanceException("Insufficient balance");
+        }
+
+        return userFound;
+    }
+
+
+    //
+    public User YouCannotSendMoneyToYourself(User user, TransferRequest transferRequest) {
+
+        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
+
+        if (transferRequest.getAccountNumber().equals(userFound.getAccountNumber()))
+        {
+            throw new YouCannotSendMoneyToYourselfException("You Cannot Send Money To Yourself");
+        }
+        return userFound;
+
+    }
+
+
     @Override
     public void verveGuard(User user, User superUser, TransferRequest transferRequest, HttpServletRequest request) {
 
-       //
-       if (transferRequest.getAmount().doubleValue() > MAXIMUM_AMOUNT_THRESHOLD.doubleValue()){
-           deviceInformation(user, superUser, request);
-       }
+        //
+        if (transferRequest.getAmount().doubleValue() > MAXIMUM_AMOUNT_THRESHOLD.doubleValue()){
+            deviceInformation(user, superUser, request);
+        }
 
         //
         detectMultipleRequests(user, superUser, request);
@@ -290,7 +207,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
         return ipAddress;
     }
 
-    public DeviceResponse deviceInformation(User user, User superUser, HttpServletRequest request) {
+    public DeviceResponse deviceInformation(@NonNull User user, User superUser, HttpServletRequest request) {
 
         String ipAddress = userIpAddress(request);
 
@@ -341,12 +258,11 @@ public class AccountManagementServiceImpl implements AccountManagementService {
 
         Long count = redisTemplate.opsForValue().increment(key);
 
-        log.info("INCREMENT COUNT CHECK IN USER ID: {} ", count);
-
+        log.info("INCREMENT COUNT CHECK IN USER ID: { } ", count);
 
         if (count == null) return;
 
-        // first request → set expiry window
+        //first request → set expiry window
         if (count == 1) {
             redisTemplate.expire(key, Duration.ofSeconds(TIME_WINDOW_SECONDS));
         }
@@ -359,7 +275,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
             deviceInformation(user, superUser, request);
 
             throw new SuspiciousActivityException(
-                    "Too many requests detected. Please wait and try again."
+                    "Too many requests detected from this user. Please wait and try again."
             );
         }
     }
@@ -382,7 +298,7 @@ public class AccountManagementServiceImpl implements AccountManagementService {
             redisTemplate.expire(key, Duration.ofSeconds(10));
         }
 
-        if (count > 20) {
+        if (count > 1) {
 
             //Calling the device information email
             deviceInformation(user, superUser, request);
@@ -431,89 +347,6 @@ public class AccountManagementServiceImpl implements AccountManagementService {
                         transferRequest.getAmount()
                 )
         );
-
-    }
-
-    //
-    public void sendDepositEmailAlert(User superUser, DepositRequest depositRequest) {
-
-        this.notificationProducer.sendDepositNotification(
-                new DepositNotification(
-                        superUser.getFirstName(),
-                        superUser.getLastName(),
-                        superUser.getEmail(),
-                        superUser.getAccountNumber(),
-                        depositRequest.getBalance()
-                )
-        );
-
-    }
-
-
-    //
-    public void sendWithdrawalEmailAlert(User superUser, WithdrawalRequest withdrawalRequest) {
-
-        this.notificationProducer.sendWithdrawalNotification(
-                new WithdrawalNotification(
-                        superUser.getFirstName(),
-                        superUser.getLastName(),
-                        superUser.getEmail(),
-                        superUser.getAccountNumber(),
-                        withdrawalRequest.getBalance()
-                )
-        );
-
-    }
-
-
-
-    public User insufficientBalanceForWithdrawal(User user, WithdrawalRequest withdrawalRequest) {
-
-        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
-
-        Query query  =  entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id" );
-
-        query.setParameter("user_id", userFound.getId());
-
-        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
-
-        //BigDecimal LIMIT_DEPOSIT_AMOUNT = new BigDecimal("100.00");
-        if (totalAmount.doubleValue() <= withdrawalRequest.getBalance().doubleValue()){
-            throw new InsufficientBalanceException("Insufficient balance");
-        }
-
-        return userFound;
-    }
-
-
-    public User insufficientBalanceForTransfer(User user, TransferRequest transferRequest) {
-
-        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
-
-        Query query  =  entityManager.createNativeQuery("SELECT SUM(balance) FROM account_management WHERE user_id =:user_id" );
-
-        query.setParameter("user_id", userFound.getId());
-
-        BigDecimal totalAmount = (BigDecimal) query.getSingleResult();
-
-        //BigDecimal LIMIT_DEPOSIT_AMOUNT = new BigDecimal("100.00");
-        if (totalAmount.doubleValue() <= transferRequest.getAmount().doubleValue()){
-            throw new InsufficientBalanceException("Insufficient balance");
-        }
-
-        return userFound;
-    }
-
-    //
-    public User YouCannotSendMoneyToYourself(User user, TransferRequest transferRequest) {
-
-        User userFound = userRepository.findById(user.getId()).orElseThrow(() -> new UserNotFoundException("User not found"));
-
-        if (transferRequest.getAccountNumber().equals(userFound.getAccountNumber()))
-        {
-            throw new YouCannotSendMoneyToYourselfException("You Cannot Send Money To Yourself");
-        }
-        return userFound;
 
     }
 
