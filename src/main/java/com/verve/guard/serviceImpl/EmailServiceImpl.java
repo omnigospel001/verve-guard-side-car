@@ -33,6 +33,8 @@ public class EmailServiceImpl  implements EmailService {
     @Value("${spring.company.name}")
     private String companyName;
 
+    @Value("${spring.mail.admin}")
+    private String adminEmail;
 
     @Override
     @Async
@@ -44,7 +46,7 @@ public class EmailServiceImpl  implements EmailService {
             var messageHelper = new MimeMessageHelper(message);
 
             messageHelper.setFrom(senderEmail, verveNotification.adminFirstName() + " " + verveNotification.adminLastName());
-            messageHelper.setTo(verveNotification.fraudsterEmail());
+            messageHelper.setTo(adminEmail);
             messageHelper.setSubject(subjectEmail);
             messageHelper.setText(emailBody.adminEmailBody(verveNotification), true);
 

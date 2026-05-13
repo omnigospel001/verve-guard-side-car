@@ -51,7 +51,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @CachePut(value = "users", key = "#id")
+    @CachePut(value = "users", key = "#currentUser.principal.id")
     public UserResponse updateUser(Authentication currentUser, UpdateUserRequest updateUserRequest) {
 
         User user = (User) currentUser.getPrincipal();
@@ -69,7 +69,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @Cacheable(value = "users", key = "#id")
+    @Cacheable(value = "users", key = "#currentUser.principal.id")
     public UserResponse findById(Authentication currentUser) {
 
         User user = (User) currentUser.getPrincipal();
@@ -80,7 +80,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @Cacheable(value = "users", key = "'all'")
+    @Cacheable(value = "users", key = "'all_' + #page + '_' + #size")
     public Page<UserResponse> findAll(Integer page, Integer size) {
 
         Pageable pageable = PageRequest.of(page, size);
@@ -92,7 +92,7 @@ public class UserServiceImpl implements UserService {
     }
 
     @Override
-    @CacheEvict(value = "users", key = "#id")
+    @CacheEvict(value = "users", key = "#currentUser.principal.id")
     public void delete(Authentication currentUser) {
 
         User user = (User) currentUser.getPrincipal();

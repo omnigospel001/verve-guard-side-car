@@ -3,10 +3,12 @@ package com.verve.guard.exception;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 import java.util.HashMap;
@@ -114,17 +116,28 @@ public class GlobalExceptionHandler {
     }
 
     @ExceptionHandler(SuspiciousActivityException.class)
-    public ResponseEntity<?> suspiciousActivityException(SuspiciousActivityException requestException) {
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
-                requestException.getMessage()
-        );
+    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS) // 429
+    public ProblemDetail handleSuspiciousActivity(SuspiciousActivityException ex) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.TOO_MANY_REQUESTS);
+        problem.setTitle("Suspicious Activity Detected");
+        problem.setDetail(ex.getMessage());
+        return problem;
     }
+
 
     @ExceptionHandler(YouCannotSendMoneyToYourselfException.class)
     public ResponseEntity<?> youCannotSendMoneyToYourselfException(YouCannotSendMoneyToYourselfException moneyToYourselfException) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(
                 moneyToYourselfException.getMessage()
         );
+    }
+
+    @ExceptionHandler(ExcessAmountTransferException.class)
+    public ProblemDetail excessAmountTransferException(ExcessAmountTransferException excessAmountTransferException) {
+        ProblemDetail problem = ProblemDetail.forStatus(HttpStatus.BAD_REQUEST);
+        problem.setTitle("Excess Amount Transfer Exception");
+        problem.setDetail(excessAmountTransferException.getMessage());
+        return problem;
     }
 
 }
