@@ -59,8 +59,6 @@ public class TransferUtility {
 
 
 
-
-
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void verveGuardTwo(User superUser, HttpServletRequest request) {
 
