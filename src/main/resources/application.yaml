@@ -41,7 +41,7 @@ spring:
     password: noaexrabuvxhdbqb
     protocol: smtp
     subject: Gospel's Verve Guard
-    admin: solomon.ogunbowale@interswitchgroup.com
+    admin: gn.udechukwu@stu.unizik.edu.ng
     adminFirstName: Suleiman
     adminLastName: Suleiman
     properties:
@@ -124,3 +124,4 @@ management:
 #  initial-interval-ms: 500
 #  multiplier: 2.0
 #suleiman.suleiman@interswitchgroup.com
+#solomon.ogunbowale@interswitchgroup.com

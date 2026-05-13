@@ -1,6 +1,7 @@
 package com.verve.guard.serviceImpl;
 
 
+import com.verve.guard.config.RestPage;
 import com.verve.guard.entity.User;
 import com.verve.guard.exception.UserNotFoundException;
 import com.verve.guard.mapper.UserMapper;
@@ -87,7 +88,12 @@ public class UserServiceImpl implements UserService {
 
         Page<User> users = userRepository.findAll(pageable);
 
-        return users.map(UserMapper::userResponse);
+        return new RestPage<>(
+                users.getContent().stream().map(UserMapper::userResponse).toList(),
+                users.getNumber(),
+                users.getSize(),
+                users.getTotalElements()
+        );
 
     }
 
