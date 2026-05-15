@@ -37,8 +37,8 @@ spring:
   mail:
     host: ${MAIL_HOST:smtp.gmail.com}
     port: ${MAIL_PORT:587}
-    username: gosmajesty@gmail.com
-    password: noaexrabuvxhdbqb
+    username: email@gmail.com
+    password: password
     protocol: smtp
     subject: Gospel's Verve Guard
     admin: suleiman.suleiman@interswitchgroup.com
