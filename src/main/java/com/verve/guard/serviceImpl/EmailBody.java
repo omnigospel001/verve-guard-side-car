@@ -25,19 +25,37 @@ public class EmailBody {
     @Value("${spring.company.name}")
     private String companyName;
 
+    @Value("${spring.mail.adminFirstName}")
+    private String adminFirstName;
+
+    @Value("${spring.mail.adminLastName}")
+    private String adminLastName;
+
+
+    String latitude = "6.4285945";
+    String longitude = "3.4276179";
+
+    String locationLink = "https://www.google.com/maps?q=" + latitude + "," + longitude;
+
+
     public String adminEmailBody(VerveNotification verveNotification){
 
-        String mailContent = "<p> Hi "+ verveNotification.adminFirstName()+ " "+ verveNotification.adminLastName()+ " </p>"+
-                "<p>We noticed a suspicious endpoint call on transfer service, please here are the details "+"" +
-                "<p> Merchant Name: "+verveNotification.fraudsterFirstName()+" "+verveNotification.fraudsterLastName()+""+"</p>" +
-                "<p> Ip Address: "+verveNotification.ip_Address()+" </p>"+
-                "<p> Device Type: "+verveNotification.deviceType()+" "+"</p>"+
-                "<p> Browser: "+verveNotification.browser()+" "+"</p>"+
-                "<p> Operating System: "+verveNotification.operatingSystem()+" </p>"+
-                "<p> Merchant Email: "+verveNotification.fraudsterEmail()+" "+"</p>"+
-                "<p> Merchant Phone: "+verveNotification.fraudsterPhone()+" </p>"+
-                "<p> Date and Time: "+verveNotification.localDateTime()+" "+"</p>"+
-                "<p> Thank you</p> <br> "+companyName+"";
+        String mailContent =
+                "<p> Hi "+ adminFirstName + " "+ adminLastName + " </p>" +
+                        "<p>We noticed a suspicious endpoint call on transfer service, please here are the details </p>" +
+
+                        "<p> Merchant Name: "+verveNotification.adminFirstName()+" "+verveNotification.adminLastName()+"</p>" +
+                        "<p> Ip Address: "+verveNotification.ip_Address()+" </p>" +
+                        "<p> Device Type: "+verveNotification.deviceType()+" </p>" +
+                        "<p> Browser: "+verveNotification.browser()+" </p>" +
+                        "<p> Operating System: "+verveNotification.operatingSystem()+" </p>" +
+                        "<p> Merchant Email: "+verveNotification.adminEmail()+" </p>" +
+                        "<p> Merchant Phone: "+verveNotification.adminPhone()+" </p>" +
+                        "<p> Date and Time: "+verveNotification.localDateTime()+" </p>" +
+
+                        "<p> Location: <a href='" + locationLink + "' target='_blank'>View on Google Maps</a></p>" +
+
+                        "<p> Thank you</p><br>" + companyName;
 
         return mailContent;
 

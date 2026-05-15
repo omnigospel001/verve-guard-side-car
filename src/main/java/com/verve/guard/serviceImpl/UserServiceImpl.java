@@ -1,6 +1,7 @@
 package com.verve.guard.serviceImpl;
 
 
+import com.verve.guard.config.RestPage;
 import com.verve.guard.entity.User;
 import com.verve.guard.exception.UserNotFoundException;
 import com.verve.guard.mapper.UserMapper;
@@ -51,7 +52,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @CachePut(value = "users", key = "#id")
+    @CachePut(value = "users", key = "#currentUser.principal.id")
     public UserResponse updateUser(Authentication currentUser, UpdateUserRequest updateUserRequest) {
 
         User user = (User) currentUser.getPrincipal();
@@ -69,7 +70,7 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @Cacheable(value = "users", key = "#id")
+    @Cacheable(value = "users", key = "#currentUser.principal.id")
     public UserResponse findById(Authentication currentUser) {
 
         User user = (User) currentUser.getPrincipal();
@@ -80,19 +81,24 @@ public class UserServiceImpl implements UserService {
 
     @Override
     @Transactional
-    @Cacheable(value = "users", key = "'all'")
+    @Cacheable(value = "users", key = "'all_' + #page + '_' + #size")
     public Page<UserResponse> findAll(Integer page, Integer size) {
 
         Pageable pageable = PageRequest.of(page, size);
 
         Page<User> users = userRepository.findAll(pageable);
 
-        return users.map(UserMapper::userResponse);
+        return new RestPage<>(
+                users.getContent().stream().map(UserMapper::userResponse).toList(),
+                users.getNumber(),
+                users.getSize(),
+                users.getTotalElements()
+        );
 
     }
 
     @Override
-    @CacheEvict(value = "users", key = "#id")
+    @CacheEvict(value = "users", key = "#currentUser.principal.id")
     public void delete(Authentication currentUser) {
 
         User user = (User) currentUser.getPrincipal();

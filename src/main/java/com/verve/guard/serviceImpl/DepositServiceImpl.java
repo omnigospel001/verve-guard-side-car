@@ -35,7 +35,6 @@ public class DepositServiceImpl implements DepositService {
     private final NotificationProducer notificationProducer;
 
 
-
     public DepositServiceImpl(RedisTemplate<String, Object> redisTemplate, AccountManagementRepository managementRepository, UserRepository userRepository, TransactionHistoryRepository historyRepository, NotificationProducer notificationProducer) {
         this.redisTemplate = redisTemplate;
         this.managementRepository = managementRepository;

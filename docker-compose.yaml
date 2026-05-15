@@ -14,6 +14,12 @@ services:
     networks:
       verve-net:
     restart: unless-stopped
+    healthcheck:
+        test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pmysecretpassword" ]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+        start_period: 30s
 
   phpmyadmin:
     image: phpmyadmin/phpmyadmin
@@ -83,6 +89,14 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - verve-net
+
+  zipkin:
+    image: openzipkin/zipkin
+    container_name: zipkin
+    ports:
+      - "9411:9411"
     networks:
       - verve-net
 

@@ -45,7 +45,7 @@ public class TransferServiceImpl implements TransferService {
     private final EntityManager entityManager;
     private final AccountManagementRepository managementRepository;
     private final AccountManagementMapper managementMapper;
-
+    private final TransferUtility transferUtility;
 
     //
     private static final BigDecimal MAXIMUM_AMOUNT_THRESHOLD = new BigDecimal("5000000"); //5 MILLION NAIRA
@@ -53,7 +53,7 @@ public class TransferServiceImpl implements TransferService {
     private static final int TIME_WINDOW_SECONDS = 10;
 
 
-    public TransferServiceImpl(RedisTemplate<String, Object> redisTemplate, UserRepository userRepository, TransactionHistoryRepository historyRepository, DeviceLogRepository deviceLogRepository, NotificationProducer notificationProducer, EntityManager entityManager, AccountManagementRepository managementRepository, AccountManagementMapper managementMapper) {
+    public TransferServiceImpl(RedisTemplate<String, Object> redisTemplate, UserRepository userRepository, TransactionHistoryRepository historyRepository, DeviceLogRepository deviceLogRepository, NotificationProducer notificationProducer, EntityManager entityManager, AccountManagementRepository managementRepository, AccountManagementMapper managementMapper, TransferUtility transferUtility) {
         this.redisTemplate = redisTemplate;
         this.userRepository = userRepository;
         this.historyRepository = historyRepository;
@@ -62,6 +62,7 @@ public class TransferServiceImpl implements TransferService {
         this.entityManager = entityManager;
         this.managementRepository = managementRepository;
         this.managementMapper = managementMapper;
+        this.transferUtility = transferUtility;
     }
 
 
@@ -70,6 +71,22 @@ public class TransferServiceImpl implements TransferService {
     public TransactionResponse transfer(TransferRequest transferRequest, String currency, String idempotencyKey, Authentication currentUser, HttpServletRequest httpRequest) {
 
         User user = (User) currentUser.getPrincipal();
+
+        User userDetails = userRepository.findByAccountNumber(transferRequest.getAccountNumber()).orElseThrow(() -> new UserNotFoundException("Invalid account number"));
+
+        User superUser = userRepository.findById(user.getId()).orElseThrow(() -> new AccountNumberNotFoundException("Account number not found"));
+
+        // Fraud check first, before any lock (Idempotency)
+        try {
+            //SECURITY ======> FRAUD DETECTION ONE
+            transferUtility.verveGuardOne(superUser, transferRequest, httpRequest);
+
+            //SECURITY ======> FRAUD DETECTION ONE
+            transferUtility.verveGuardTwo(superUser, httpRequest);
+        } catch (SuspiciousActivityException suspiciousActivityException) {
+            log.warn("FRAUD DETECTED — transfer blocked for user {}", user.getId());
+            throw suspiciousActivityException; // rethrow — stops everything
+        }
 
         String responseKey = "idem:transfer:" + idempotencyKey;
         String lockKey = responseKey + ":lock";
@@ -83,13 +100,7 @@ public class TransferServiceImpl implements TransferService {
         }
 
 
-        User userDetails = userRepository.findByAccountNumber(transferRequest.getAccountNumber()).orElseThrow(() -> new UserNotFoundException("Invalid account number"));
-
-        User superUser = userRepository.findById(user.getId()).orElseThrow(() -> new AccountNumberNotFoundException("Account number not found"));
-
-        //SECURITY
-        verveGuard(userDetails, superUser, transferRequest, httpRequest);
-
+        /// //////////
         User userFound = YouCannotSendMoneyToYourself(superUser, transferRequest);
         log.info("Passed user conflict checks");
 
@@ -174,21 +185,6 @@ public class TransferServiceImpl implements TransferService {
     }
 
 
-    @Override
-    public void verveGuard(User user, User superUser, TransferRequest transferRequest, HttpServletRequest request) {
-
-        //
-        if (transferRequest.getAmount().doubleValue() > MAXIMUM_AMOUNT_THRESHOLD.doubleValue()){
-            deviceInformation(user, superUser, request);
-        }
-
-        //
-        detectMultipleRequests(user, superUser, request);
-        //
-        detectMultipleRequestsByIp(user, superUser, request);
-
-    }
-
     public String userIpAddress(HttpServletRequest request) {
 
         String header = request.getHeader("X-Forwarded-For");
@@ -251,71 +247,10 @@ public class TransferServiceImpl implements TransferService {
     }
 
     //
-    //@Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void detectMultipleRequests(User user, User superUser, HttpServletRequest request) {
-
-        String key = "fraud:transfer:user:" + user.getId();
-
-        Long count = redisTemplate.opsForValue().increment(key);
-
-        log.info("INCREMENT COUNT CHECK IN USER ID: { } ", count);
-
-        if (count == null) return;
-
-        //first request → set expiry window
-        if (count == 1) {
-            redisTemplate.expire(key, Duration.ofSeconds(TIME_WINDOW_SECONDS));
-        }
-
-        log.info("User {} has made {} requests within {} seconds", user.getEmail(), count, TIME_WINDOW_SECONDS);
-
-        if (count > MAX_REQUESTS) {
-
-            //Calling the device information email
-            deviceInformation(user, superUser, request);
-
-            throw new SuspiciousActivityException(
-                    "Too many requests detected from this user. Please wait and try again."
-            );
-        }
-    }
-
-
-    //
-    //@Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void detectMultipleRequestsByIp(User user, User superUser, HttpServletRequest request) {
-
-        //I'm getting the user ipAddress
-        String ipAddress = userIpAddress(request);
-
-        String key = "fraud:transfer:ip:" + ipAddress;
-
-        Long count = redisTemplate.opsForValue().increment(key);
-
-        log.info("INCREMENT COUNT CHECK IP ADDRESS: {} ", count);
-
-        if (count == 1) {
-            redisTemplate.expire(key, Duration.ofSeconds(10));
-        }
-
-        if (count > 1) {
-
-            //Calling the device information email
-            deviceInformation(user, superUser, request);
-
-            throw new SuspiciousActivityException("Too many requests from this IP");
-        }
-    }
-
-    //
     public void sendFraudEmailAlert(String ipAddress, UserAgent userAgent, User user, User superUser) {
 
         this.notificationProducer.sendNotification(
                 new VerveNotification(
-                        user.getFirstName(),
-                        user.getLastName(),
-                        user.getPhone(),
-                        user.getEmail(),
                         ipAddress,
                         userAgent.getOperatingSystem().getName(),
                         userAgent.getBrowser().getName(),
